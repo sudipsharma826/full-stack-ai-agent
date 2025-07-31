@@ -1,0 +1,24 @@
+services:
+  app:
+    image: node
+    container_name: ai_ticket_assistant
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    ports:
+      - "4000:3000"
+    depends_on:
+      - mongo
+    volumes:
+      - .:/app
+    restart: always
+  
+
+  mongo:
+    image: mongo
+    container_name: database
+    ports:
+      - "27017:27017"
+    volumes:
+      - .:/app
+    restart: always
