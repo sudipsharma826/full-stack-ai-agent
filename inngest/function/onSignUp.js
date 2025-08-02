@@ -1,6 +1,6 @@
 import { NonRetriableError } from "inngest";
 import user from "../../models/user.js";
-import { inngest } from "../client.js"; // `
+import  inngest  from "../client.js"; // `
 import { sendMail } from "../../lib/sendMail.js";
 
 export const userSignUp = inngest.createFunction(

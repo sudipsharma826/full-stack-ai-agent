@@ -10,10 +10,12 @@ const ticketSchema = new mongoose.Schema({
     },
     createdBy:{type:mongoose.Schema.Types.ObjectId, ref: 'user'},
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'user' ,default: null},
-    priority: String,
-    deadline:String,
-    helpfulNotes: String,
-    relatedskills: [String],
+    //below fields are added by AI
+    summary: { type: String, default: null },
+    priority: { type: String, default: null },
+    deadline: { type: String, default: null },
+    helpfulNotes: { type: String, default: null },
+    relatedskills: { type: [String], default: [] },
 
 }, { timestamps: true });
 

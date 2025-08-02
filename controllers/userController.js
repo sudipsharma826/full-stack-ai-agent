@@ -1,7 +1,7 @@
-import user from "../models/user";
+import user from "../models/user.js";
 import bcrypt from 'bcrypt';
-import jwt, { decode } from 'jsonwebtoken';
-import { inngest } from "../inngest/client.js"; // Import inngest client
+import jwt from 'jsonwebtoken';
+import inngest from "../inngest/client.js";
 
 // SignUp
 export const signup = async (req, res) => {
