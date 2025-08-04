@@ -1,7 +1,6 @@
 {
-    "watch": ["app.js", "lib", "models"],
-    "ext": "js,json",
-    "exec": "node app.js",
-    "ignore": ["node_modules"],
-    "legacyWatch": true
+  "watch": ["app.js", "routes", "controllers", "models", "lib"],
+  "ext": "js,json",
+  "ignore": ["node_modules"],
+  "legacyWatch": true
 }
