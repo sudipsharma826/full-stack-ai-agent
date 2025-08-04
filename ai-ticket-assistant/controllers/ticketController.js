@@ -16,36 +16,59 @@ export const createTicket= async(req, res) => {
         });
 
         //Trigger the Inngest function to handle ticket creation
-        await inngest.sendEvent({
-            name: "ticket/create",
-            data: {
-                ticketId: newTicket._id,
-                title: newTicket.title,
-                description: newTicket.description,
-                createdBy: newTicket.createdBy.toString(),
-            },
+        try {
+            const inngestResult = await inngest.send({
+                name: "ticket/create",
+                data: {
+                    ticketId: newTicket._id.toString(),
+                    title: newTicket.title,
+                    description: newTicket.description,
+                    createdBy: newTicket.createdBy.toString(),
+                },
+            });          
+        } catch (inngestError) {
+            return res.status(500).json({ message: "Failed to process ticket creation" });
+        }
+        return res.status(201).json({
+            message: "Ticket created successfully and AI processing started",
+            ticketId: newTicket._id
         });
-        return res.status(201).json({ message: "Ticket created successfully and AI processing started", ticketId: newTicket });
 
     }catch(e){
         console.error("Error creating ticket:", e.message);
         return res.status(500).json({ message: "Internal server error" });
-
     }
 }
 
-// function to get a single ticket by ID 
+// function to get a single ticket by ID with role-based access
 export const getTicketById = async (req, res) => {
     try {
         const { ticketId } = req.params;
-        if(req.user.role !== "user") { 
-        const foundTicket = await ticket.findById(ticketId).populate("assignedTo",["_id", "email"]); 
+        let foundTicket;
+        
+        if (req.user.role === "admin") {
+            // Admins can view all tickets
+            foundTicket = await ticket.findById(ticketId).populate("assignedTo", ["_id", "email"]);
+        } else if (req.user.role === "moderator") {
+            // Moderators can view tickets assigned to them or created by them
+            foundTicket = await ticket.findOne({ 
+                _id: ticketId, 
+                $or: [
+                    { assignedTo: req.user._id },
+                    { createdBy: req.user._id }
+                ]
+            }).populate("assignedTo", ["_id", "email"]);
+        } else {
+            // Users can only view tickets they created (exclude AI analysis fields)
+            foundTicket = await ticket.findOne({ 
+                _id: ticketId, 
+                createdBy: req.user._id 
+            }).select("title description status createdBy assignedTo priority deadline createdAt relatedSkills")
+             .populate("assignedTo", ["_id", "email"]);
         }
-        else{
-        const foundTicket = await ticket.findOne({ _id: ticketId, createdBy: req.user._id }).select("title description status createdBy assignedTo  priority deadline createdAt").populate("assignedTo",["_id", "email"]);
-        }
+        
         if (!foundTicket) {
-            return res.status(404).json({ message: "Ticket not found" });
+            return res.status(404).json({ message: "Ticket not found or access denied" });
         }
         return res.status(200).json(foundTicket);
     } catch (e) {
@@ -53,23 +76,119 @@ export const getTicketById = async (req, res) => {
         return res.status(500).json({ message: "Internal server error" });
     }
 }
-// function to get all tickets
+// function to get all tickets with role-based access
 export const getAllTickets = async (req, res) => {
     try {
-        if (req.user.role !== "user") { // beyond user role ,all can access
-            const tickets = await ticket.find()
-            .populate("assignedTo",["_id", "email"])// with assignedTo  user id and email is populated
-            .sort({ createdAt: -1 }); // sort by createdAt in descending order
-            return res.status(200).json(tickets);
-        }else{
-            //for user role, only return tickets created by the user
-            const tickets = await ticket.find({ createdBy: req.user._id })
-            .populate("assignedTo",["_id", "email"]) // with assignedTo  user id and email is populated
-            .sort({ createdAt: -1 }); // sort by createdAt in descending order
-            return res.status(200).json(tickets);
+        let tickets;
+        
+        if (req.user.role === "admin") {
+            // Admins can view all tickets
+            tickets = await ticket.find()
+                .populate("assignedTo", ["_id", "email"])
+                .populate("createdBy", ["_id", "email"])
+                .sort({ createdAt: -1 });
+        } else if (req.user.role === "moderator") {
+            // Moderators can view tickets assigned to them or created by them
+            tickets = await ticket.find({
+                $or: [
+                    { assignedTo: req.user._id },
+                    { createdBy: req.user._id }
+                ]
+            })
+                .populate("assignedTo", ["_id", "email"])
+                .populate("createdBy", ["_id", "email"])
+                .sort({ createdAt: -1 });
+        } else {
+            // Users can only view tickets they created (exclude AI analysis fields)
+            tickets = await ticket.find({ createdBy: req.user._id })
+                .select("title description status createdBy assignedTo priority deadline createdAt relatedSkills")
+                .populate("assignedTo", ["_id", "email"])
+                .populate("createdBy", ["_id", "email"])
+                .sort({ createdAt: -1 });
         }
+        
+        return res.status(200).json(tickets);
     } catch (e) {
         console.error("Error fetching tickets:", e.message);
+        return res.status(500).json({ message: "Internal server error" });
+    }
+}
+
+// Function to update ticket status (close ticket)
+export const updateTicketStatus = async (req, res) => {
+    try {
+        const { ticketId } = req.params;
+        const { status } = req.body;
+        
+        // Validate status
+        if (!['open', 'in-progress', 'closed'].includes(status)) {
+            return res.status(400).json({ message: "Invalid status. Must be 'open', 'in-progress', or 'closed'" });
+        }
+        
+        let foundTicket;
+        
+        if (req.user.role === "admin") {
+            // Admins can update any ticket
+            foundTicket = await ticket.findById(ticketId);
+        } else if (req.user.role === "moderator") {
+            // Moderators can only update tickets assigned to them
+            foundTicket = await ticket.findOne({ 
+                _id: ticketId, 
+                assignedTo: req.user._id 
+            });
+        } else {
+            return res.status(403).json({ message: "Access denied. Only moderators and admins can update ticket status." });
+        }
+        
+        if (!foundTicket) {
+            return res.status(404).json({ message: "Ticket not found or access denied" });
+        }
+        
+        await ticket.findByIdAndUpdate(ticketId, { status });
+        
+        return res.status(200).json({ message: "Ticket status updated successfully" });
+    } catch (e) {
+        console.error("Error updating ticket status:", e.message);
+        return res.status(500).json({ message: "Internal server error" });
+    }
+}
+
+// Function to delete ticket
+export const deleteTicket = async (req, res) => {
+    try {
+        const { ticketId } = req.params;
+        
+        let foundTicket;
+        
+        if (req.user.role === "admin") {
+            // Admins can delete any ticket
+            foundTicket = await ticket.findById(ticketId);
+        } else if (req.user.role === "moderator") {
+            // Moderators can delete tickets they created or assigned to them
+            foundTicket = await ticket.findOne({ 
+                _id: ticketId, 
+                $or: [
+                    { assignedTo: req.user._id },
+                    { createdBy: req.user._id }
+                ]
+            });
+        } else {
+            // Users can only delete tickets they created
+            foundTicket = await ticket.findOne({ 
+                _id: ticketId, 
+                createdBy: req.user._id 
+            });
+        }
+        
+        if (!foundTicket) {
+            return res.status(404).json({ message: "Ticket not found or access denied" });
+        }
+        
+        await ticket.findByIdAndDelete(ticketId);
+        
+        return res.status(200).json({ message: "Ticket deleted successfully" });
+    } catch (e) {
+        console.error("Error deleting ticket:", e.message);
         return res.status(500).json({ message: "Internal server error" });
     }
 }
