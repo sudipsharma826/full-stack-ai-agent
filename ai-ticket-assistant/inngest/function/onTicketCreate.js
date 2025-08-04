@@ -1,109 +1,123 @@
 import { NonRetriableError } from "inngest";
 import ticket from "../../models/ticket.js";
-import  inngest  from "../client.js";
+import inngest from "../client.js";
 import { sendMail } from "../../lib/sendMail.js";
 import { analyzeTicket } from "../../lib/agentKit.js";
 import user from "../../models/user.js";
 
 export const onTicketCreate = inngest.createFunction(
-  {
-    id: "onTicketCreate",
-    retries: 2,
-  },
-  {
-    event: "ticket/create",
-  },
+  { id: "onTicketCreate", retries: 2 },
+  { event: "ticket/create" },
   async ({ event, step }) => {
+    const { ticketId } = event.data;
+    console.log("🔔 Inngest: Ticket creation triggered for ID:", ticketId);
+
     try {
-      const { ticketId } = event.data;
-
-      // Step 1: Fetch the ticket details from the database
-      const ticketObject = await step.run("get-ticket-details", async () => {
-        const foundTicket = await ticket.findById(ticketId);
-        if (!foundTicket) {
-          throw new NonRetriableError("Ticket not found");
-        }
-        return foundTicket;
+      // Step 1: Get ticket
+      const ticketObject = await step.run("get-ticket", async () => {
+        const found = await ticket.findById(ticketId);
+        if (!found) throw new NonRetriableError("Ticket not found");
+        return found;
       });
 
-      // Step 2: Update ticket status to "in-progress"
-      await step.run("update-ticket-status", async () => {
-        await ticket.findByIdAndUpdate(ticketObject._id, {
-          status: "in-progress",
-        });
+      // Step 2: Mark status as in-progress
+      await step.run("set-status-in-progress", async () => {
+        await ticket.findByIdAndUpdate(ticketId, { status: "in-progress" });
       });
 
-      // Step 3: Analyze the ticket using AI
-      const aiResponse = await analyzeTicket(ticketObject);
-      if (!aiResponse) {
-        throw new NonRetriableError("AI response is null or invalid");
+      // Step 3: Analyze with AI
+      let aiResponse = null;
+      try {
+        aiResponse = await analyzeTicket(ticketObject);
+      } catch (err) {
+        console.warn("AI analysis failed:", err.message);
       }
 
-      // Step 4: Update ticket with AI response
-      const relatedSkills = await step.run("update-ticket-with-ai-response", async () => {
-        await ticket.findByIdAndUpdate(ticketObject._id, {
-          summary: aiResponse.summary,
-          priority: ["low", "medium", "high"].includes(aiResponse.priority)
-            ? aiResponse.priority
+      // Fallback if AI fails
+      if (!aiResponse) {
+        aiResponse = {
+          summary: "Manual review required",
+          priority: "medium",
+          helpfulNotes: "AI analysis unavailable",
+          relatedSkills: ["General Support"],
+          deadline: null,
+        };
+      }
+
+      // Step 4: Clean & update ticket with AI result
+      const relatedSkills = await step.run("update-with-ai", async () => {
+        const cleanSkills = Array.isArray(aiResponse.relatedSkills)
+          ? aiResponse.relatedSkills.filter(skill => typeof skill === "string" && skill.trim())
+          : ["General Support"];
+
+        const cleanDeadline = aiResponse.deadline && aiResponse.deadline !== "null"
+          ? String(aiResponse.deadline).trim()
+          : null;
+
+        const updateData = {
+          summary: aiResponse.summary || "AI analysis completed",
+          priority: ["low", "medium", "high"].includes((aiResponse.priority || "").toLowerCase())
+            ? aiResponse.priority.toLowerCase()
             : "medium",
-          helpfulNotes: aiResponse.helpfulNotes,
-          relatedSkills: aiResponse.relatedSkills,
-          deadline: (aiResponse.deadline < ticketObject.createdAt.toISOString())
-            ? aiResponse.deadline
-            : null,
+          helpfulNotes: aiResponse.helpfulNotes || "No additional notes",
+          relatedSkills: cleanSkills,
+          deadline: cleanDeadline,
+          status: "open",
+        };
+
+        const updated = await ticket.findByIdAndUpdate(ticketId, updateData, {
+          new: true,
+          runValidators: true,
         });
-        return aiResponse.relatedSkills;
+
+        if (!updated) throw new Error("Failed to update ticket");
+
+        return cleanSkills;
       });
 
-      // Step 5: Assign the ticket to a moderator or fallback to admin
-      const assignedUser = await step.run("assign-ticket-to-moderator", async () => {
-        let moderator = await user.findOne({
+      // Step 5: Assign ticket to a moderator/admin
+      const assignedUser = await step.run("assign-to-user", async () => {
+        const matchBySkill = await user.findOne({
           role: "moderator",
-          skills: {
-            $elemMatch: {
-              $regex: relatedSkills.join("|"),
-              $options: "i", // case-insensitive
-            },
-          },
+          skills: { $elemMatch: { $regex: relatedSkills.join("|"), $options: "i" } },
         });
 
-        if (!moderator) {
-          moderator = await user.findOne({ role: "admin" });
+        const fallbackUser = await user.findOne({ role: "moderator" }) || await user.findOne({ role: "admin" });
+
+        const assigned = matchBySkill || fallbackUser;
+
+        if (assigned) {
+          await ticket.findByIdAndUpdate(ticketId, { assignedTo: assigned._id });
         }
 
-        await ticket.findByIdAndUpdate(ticketObject._id, {
-          assignedTo: moderator?._id,
-        });
-
-        return moderator;
+        return assigned;
       });
 
-      // Step 6: Send an email to the assigned user
-      await step.run("send-email-to-moderator/admin", async () => {
-        if (!assignedUser?.email) {
-          console.warn("No user email to send to.");
-          return;
-        }
+      // Step 6: Send notification
+      await step.run("send-email", async () => {
+        if (!assignedUser?.email) return;
 
-        await sendMail({
-          to: assignedUser.email,
-          subject: "New Ticket Assigned",
-          text: `You have been assigned a new ticket.`,
-          html: `
-            <p>You have been assigned a new ticket with the following details:</p>
+        await sendMail(
+          assignedUser.email,
+          "New Ticket Assigned",
+          "You have been assigned a new ticket.",
+          `
             <p><strong>Title:</strong> ${ticketObject.title}</p>
             <p><strong>Description:</strong> ${ticketObject.description}</p>
             <p><strong>Summary:</strong> ${aiResponse.summary}</p>
             <p><strong>Priority:</strong> ${aiResponse.priority}</p>
             <p><strong>Helpful Notes:</strong> ${aiResponse.helpfulNotes}</p>
             <p><strong>Related Skills:</strong> ${aiResponse.relatedSkills.join(", ")}</p>
-          `,
-        });
+          `
+        );
       });
 
-    } catch (e) {
-      console.error("Error in onTicketCreate function:", e.message);
-      return { success: false, error: e.message };
+      console.log("✅ Ticket processing completed");
+      return { success: true };
+
+    } catch (err) {
+      console.error("❌ Ticket creation error:", err.message);
+      return { success: false, error: err.message };
     }
   }
 );
