@@ -6,6 +6,7 @@ services:
     container_name: ai-ticket-assistant
     ports:
       - "4000:3000"
+      - "8288:8288"
     depends_on:
       - mongo
     volumes:
