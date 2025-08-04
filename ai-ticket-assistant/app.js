@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import connectDB from './lib/db.js';
 import userRoutes from './routes/userRoutes.js';
 import ticketRoutes from './routes/ticketRoutes.js';
@@ -12,20 +13,23 @@ import inngest from './inngest/client.js';
 dotenv.config();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: process.env.APP_URL,
+  credentials: true
+}));
 app.use(express.json());
+app.use(cookieParser());
 const PORT = process.env.PORT;
 
 //Connect to MongoDB
 connectDB();
 
 app.get('/', (req, res) => {
-  res.send('Running');
+  res.send('AI Ticket Assistant API is running');
 });
 
-
-app.use('/api/users', userRoutes);
-app.use('/api/tickets', ticketRoutes);
+app.use('/api/user', userRoutes);
+app.use('/api/ticket', ticketRoutes);
 
 //Inngest routes
 app.use("/inngest",
