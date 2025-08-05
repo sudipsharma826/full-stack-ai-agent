@@ -26,21 +26,41 @@
 // }
 //we have test the mail are sent successfully using mailtrap.io
 //now for the real production we will use the resend mail service
+
+
 import { Resend } from 'resend';
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function sendMail(to, subject, text, html) {
+    if (!process.env.RESEND_API_KEY) {
+        throw new Error('RESEND_API_KEY environment variable is not set');
+    }
+
+
     try {
-        await resend.emails.send({
-            from: process.env.MAILTRAP_SMTP_USER,
+        // Use the default Resend domain for testing
+        const fromEmail = 'AI Ticket Assistant <no-reply@sudipsharma.com.np>';
+        
+        const { data, error } = await resend.emails.send({
+            from: fromEmail,
             to,
             subject,
             text,
-            html
+            html,
         });
-        console.log('Email sent successfully');
+
+        if (error) {
+            console.error('❌ Resend API Error:', error);
+            throw new Error(`Resend API Error: ${JSON.stringify(error)}`);
+        }
+
+        console.log('✅ Email sent successfully!');
+        console.log('📋 Email ID:', data?.id);
+        return data;
     } catch (error) {
-        console.error('Error sending email:', error.message);
+        console.error('❌ Failed to send email:', error.message);
+        console.error('📋 Full error:', error);
         throw error;
     }
 }

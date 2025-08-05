@@ -1,13 +1,17 @@
 import { createAgent, gemini } from "@inngest/agent-kit";
 
 export const analyzeTicket = async (ticket) => {
-  console.log("Starting AI analysis for ticket:", ticket._id);
+  console.log("🤖 Starting AI analysis for ticket:", ticket._id);
+  console.log("📋 Ticket details:", { title: ticket.title, description: ticket.description });
 
   if (!process.env.GEMINI_API_KEY) {
+    console.error("❌ GEMINI_API_KEY is not set in environment variables");
     throw new Error("GEMINI_API_KEY is not set in environment variables");
   }
 
   try {
+    console.log("🔧 Creating AI agent with Gemini model...");
+    
     const agent = createAgent({
       model: gemini({
         model: "gemini-1.5-flash",
@@ -15,27 +19,24 @@ export const analyzeTicket = async (ticket) => {
       }),
       name: "AI Ticket Analyzer",
       description: "Analyzes support tickets and suggests responses",
-      system: `
-        You are an AI assistant that analyzes support tickets and suggests responses.
-        Your job is to:
-        1. Summarize the issue.
-        2. Estimate priority (low, medium, high).
-        3. Provide helpful suggestions.
-        4. List related skills.
-        5. Provide a reasonable deadline (format: YYYY-MM-DD) that is in the future.
-
-        Important: Always set deadlines to be in the future, starting from today (${new Date().toISOString().split('T')[0]}).
-        For low priority: add 7-14 days
-        For medium priority: add 3-7 days  
-        For high priority: add 1-3 days
-
-        Respond ONLY with a pure JSON object.
-        Do NOT include markdown, code blocks, or extra text.
-      `,
+      system: `You are an AI assistant that analyzes support tickets and suggests responses.
+        
+        Analyze the ticket and respond with ONLY a valid JSON object containing:
+        - summary: Brief summary of the issue
+        - priority: one of "low", "medium", or "high"  
+        - helpfulNotes: Helpful suggestions for resolution
+        - relatedSkills: array of relevant skills
+        - deadline: date in YYYY-MM-DD format (future date based on priority)
+        
+        For deadlines, use these guidelines:
+        - high priority: add 1-3 days from today (${new Date().toISOString().split('T')[0]})
+        - medium priority: add 3-7 days from today
+        - low priority: add 7-14 days from today
+        
+        Respond ONLY with valid JSON. No explanations, no markdown, no code blocks.`,
     });
 
-    const prompt = `
-Analyze this support ticket and respond with ONLY a JSON object:
+    const prompt = `Analyze this support ticket and respond with ONLY a JSON object:
 
 Ticket Details:
 - ID: ${ticket._id}
@@ -49,47 +50,74 @@ Required JSON format:
   "helpfulNotes": "Helpful suggestions for resolution",
   "relatedSkills": ["skill1", "skill2"],
   "deadline": "YYYY-MM-DD"
-}
-`;
+}`;
 
+    console.log("📤 Sending prompt to AI agent...");
+    
     const response = await agent.run(prompt);
-    console.log("Full AI response:", JSON.stringify(response, null, 2));
+    console.log("📥 AI response received:", JSON.stringify(response, null, 2));
 
-    // Extract raw content from response
-    let raw = "";
-    const output = response.output?.[0];
-    if (typeof output === "string") {
-      raw = output;
-    } else if (output?.content) {
-      raw = output.content;
-    } else if (output?.context) {
-      raw = output.context;
+    // Extract the response content
+    let rawContent = "";
+    
+    if (response.output && Array.isArray(response.output) && response.output.length > 0) {
+      const firstOutput = response.output[0];
+      if (typeof firstOutput === "string") {
+        rawContent = firstOutput;
+      } else if (firstOutput && typeof firstOutput === "object") {
+        rawContent = firstOutput.content || firstOutput.text || JSON.stringify(firstOutput);
+      }
+    } else if (response.content) {
+      rawContent = response.content;
+    } else if (response.text) {
+      rawContent = response.text;
     } else {
-      raw = JSON.stringify(output || response.output || response);
+      rawContent = JSON.stringify(response);
     }
 
-    console.log("Extracted raw response:", raw);
+    console.log("📝 Extracted raw content:", rawContent);
 
-    // Extract JSON string
-    const codeBlockMatch = raw.match(/```json\s*([\s\S]*?)\s*```/i);
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    const jsonString = codeBlockMatch?.[1]?.trim() || jsonMatch?.[0]?.trim() || raw.trim();
+    // Clean up the content to extract JSON
+    let jsonString = rawContent.trim();
+    
+    // Remove markdown code blocks if present
+    const codeBlockMatch = jsonString.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (codeBlockMatch) {
+      jsonString = codeBlockMatch[1].trim();
+    }
+    
+    // Extract JSON object
+    const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      jsonString = jsonMatch[0];
+    }
+
+    console.log("🧩 JSON string to parse:", jsonString);
 
     const parsed = JSON.parse(jsonString);
-    console.log("✅ Parsed JSON:", parsed);
+    console.log("✅ Successfully parsed JSON:", parsed);
 
-    // Return cleaned and validated result
-    return {
+    // Validate and return cleaned response
+    const result = {
       summary: parsed.summary || "AI analysis completed",
-      priority: ["low", "medium", "high"].includes(parsed.priority?.toLowerCase())
-        ? parsed.priority.toLowerCase()
+      priority: ["low", "medium", "high"].includes(parsed.priority?.toLowerCase()) 
+        ? parsed.priority.toLowerCase() 
         : "medium",
       helpfulNotes: parsed.helpfulNotes || "No additional notes provided",
-      relatedSkills: parsed.relatedSkills || ["General Support"],
-      deadline: parsed.deadline || null,
+      relatedSkills: Array.isArray(parsed.relatedSkills) 
+        ? parsed.relatedSkills.filter(skill => typeof skill === "string" && skill.trim())
+        : ["General Support"],
+      deadline: parsed.deadline && parsed.deadline !== "null" && parsed.deadline !== null
+        ? parsed.deadline
+        : null,
     };
+
+    console.log("🎯 Final cleaned response:", result);
+    return result;
+
   } catch (error) {
     console.error("❌ AI analysis failed:", error.message);
-    throw error;
+    console.error("📍 Error stack:", error.stack);
+    throw new Error(`AI analysis failed: ${error.message}`);
   }
 };
