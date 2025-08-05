@@ -32,7 +32,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/ticket', ticketRoutes);
 
 //Inngest routes
-app.use("/inngest",
+app.use("/api/inngest",
   serve({
     client: inngest,
     functions: [userSignUp, onTicketCreate],
