@@ -2,6 +2,7 @@ import axios from 'axios';
 import useUserStore from '../store/useUserStore';
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL;
+console.log('API Base URL:', BASE_URL);
 
 // Create axios instance
 const api = axios.create({

@@ -35,7 +35,7 @@ const CreateTicket = () => {
       
       // Redirect to ticket details after 2 seconds
       setTimeout(() => {
-        navigate(`/ticket/${response.data.ticketId._id}`);
+        navigate(`/ticket/${response.data.ticketId}`);
       }, 2000);
     } catch (error) {
       setError(error.response?.data?.message || 'Failed to create ticket');

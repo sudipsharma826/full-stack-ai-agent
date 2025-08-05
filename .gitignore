@@ -3,3 +3,4 @@ node_modules
 mongo-data
 package-lock.json
 note.txt
+.env.production

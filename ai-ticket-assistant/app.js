@@ -13,6 +13,7 @@ import inngest from './inngest/client.js';
 dotenv.config();
 
 const app = express();
+console.log("App_URL:", process.env.APP_URL);
 app.use(cors({
   origin: process.env.APP_URL,
   credentials: true
@@ -32,7 +33,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/ticket', ticketRoutes);
 
 //Inngest routes
-app.use("/api/inngest",
+app.use("/inngest",
   serve({
     client: inngest,
     functions: [userSignUp, onTicketCreate],
