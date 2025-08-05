@@ -1,7 +1,7 @@
 import axios from 'axios';
 import useUserStore from '../store/useUserStore';
 
-const BASE_URL = import.meta.env.VITE_BACKEND_URL;
+const BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://full-stack-ai-agent-87lk.onrender.com';
 console.log('API Base URL:', BASE_URL);
 
 // Create axios instance
