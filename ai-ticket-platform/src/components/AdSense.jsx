@@ -1,13 +1,13 @@
 import { useEffect } from 'react';
 
 const AdSense = ({ 
-  slot = import.meta.env.VITE_ADSENSE_HORIZONTAL_SLOT,
+  slot = "8121257542",
   format = "auto",
   style = { display: "block" },
   responsive = true,
   className = ""
 }) => {
-  const clientId = import.meta.env.VITE_ADSENSE_CLIENT_ID;
+  const clientId = "ca-pub-6851464724936985";
 
   useEffect(() => {
     // Load AdSense script if not already loaded
