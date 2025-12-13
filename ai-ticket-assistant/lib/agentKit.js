@@ -1,23 +1,35 @@
-import { createAgent, gemini } from "@inngest/agent-kit";
+import { createAgent, grok, openai ,gemini} from "@inngest/agent-kit";
+import 'dotenv/config';
+
 
 export const analyzeTicket = async (ticket) => {
   console.log("🤖 Starting AI analysis for ticket:", ticket._id);
   console.log("📋 Ticket details:", { title: ticket.title, description: ticket.description });
 
-  if (!process.env.GEMINI_API_KEY) {
-    console.error("❌ GEMINI_API_KEY is not set in environment variables");
-    throw new Error("GEMINI_API_KEY is not set in environment variables");
+  // Validate provider API keys (we're using OpenAI here by default)
+  if (!process.env.OPENROUTER_API_KEY) {
+    console.error("❌ OPENROUTER_API_KEY is not set in environment variables");
+    throw new Error("OPENROUTER_API_KEY is not set in environment variables");
   }
 
   try {
     console.log("🔧 Creating AI agent with Gemini model...");
     
     const agent = createAgent({
-      model: gemini({
-        model: "gemini-1.5-flash",
-        apiKey: process.env.GEMINI_API_KEY,
+      model: openai({
+        model: "openai/gpt-4o-mini",
+        apiKey: process.env.OPENROUTER_API_KEY,
+        baseUrl: "https://openrouter.ai/api/v1",
+    defaultParameters: { 
+      temperature: 0.5 
+    },
+    headers:{
+      "HTTP-Referer":"ai-ticket-assistant",
+      "X-Title":"AI Ticket Assistant"
+    }
       }),
-      name: "AI Ticket Analyzer",
+      // Use a unique agent name per ticket to avoid duplicate step IDs in Inngest
+      name: `AI Ticket Analyzer - ${ticket._id}`,
       description: "Analyzes support tickets and suggests responses",
       system: `You are an AI assistant that analyzes support tickets and suggests responses.
         
@@ -53,8 +65,25 @@ Required JSON format:
 }`;
 
     console.log("📤 Sending prompt to AI agent...");
-    
-    const response = await agent.run(prompt);
+
+    // Retry with exponential backoff to handle 429 rate limits or transient errors
+    const maxRetries = 3;
+    const baseDelayMs = 1000;
+    let response;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        response = await agent.run(prompt);
+        break;
+      } catch (err) {
+        const isRateLimit = String(err?.message || '').includes('429') || String(err).includes('rate') || String(err).includes('Rate');
+        if (attempt === maxRetries || !isRateLimit) {
+          throw err;
+        }
+        const delay = baseDelayMs * Math.pow(2, attempt - 1);
+        console.warn(`⚠️ AI call failed (attempt ${attempt}/${maxRetries}). Retrying in ${delay}ms...`);
+        await new Promise(res => setTimeout(res, delay));
+      }
+    }
     console.log("📥 AI response received:", JSON.stringify(response, null, 2));
 
     // Extract the response content
@@ -116,8 +145,16 @@ Required JSON format:
     return result;
 
   } catch (error) {
-    console.error("❌ AI analysis failed:", error.message);
-    console.error("📍 Error stack:", error.stack);
-    throw new Error(`AI analysis failed: ${error.message}`);
+    console.warn("⚠️ AI analysis failed (using fallback):", error.message);
+    console.warn("💡 Tip: Check API key validity, quota, and model access");
+    const result = {
+      summary: `Manual review required for: ${ticket.title}`,
+      priority: "medium",
+      helpfulNotes: "AI unavailable or rate-limited. Proceed with manual triage.",
+      relatedSkills: ["General Support"],
+      deadline: null,
+    };
+    console.log("↩️ Using fallback analysis:", result);
+    return result;
   }
 };

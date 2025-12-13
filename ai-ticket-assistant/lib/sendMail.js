@@ -27,11 +27,10 @@
 //we have test the mail are sent successfully using mailtrap.io
 //now for the real production we will use the resend mail service
 
-
+import 'dotenv/config';
 import { Resend } from 'resend';
-
 const resend = new Resend(process.env.RESEND_API_KEY);
-
+console.log("Resend API Key:", process.env.RESEND_API_KEY ? 'Loaded' : 'Not Loaded');
 export async function sendMail(to, subject, text, html) {
     if (!process.env.RESEND_API_KEY) {
         throw new Error('RESEND_API_KEY environment variable is not set');

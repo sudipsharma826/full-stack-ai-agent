@@ -43,7 +43,7 @@ export const onTicketCreate = inngest.createFunction(
       } catch (err) {
         console.warn("⚠️ AI analysis failed:", err.message);
       }
-
+      
       // Step 4: Clean & update ticket with AI result
       const relatedSkills = await step.run("update-with-ai", async () => {
         console.log("📝 Step 4: Updating ticket with AI results...");

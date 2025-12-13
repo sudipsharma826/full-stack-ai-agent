@@ -9,8 +9,7 @@ import { serve } from 'inngest/express';
 import {userSignUp} from './inngest/function/onSignUp.js';
 import {onTicketCreate} from './inngest/function/onTicketCreate.js';
 import inngest from './inngest/client.js';
-
-dotenv.config();
+import 'dotenv/config';
 
 const app = express();
 console.log("App_URL:", process.env.APP_URL);
