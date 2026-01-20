@@ -11,11 +11,15 @@ import {onTicketCreate} from './inngest/function/onTicketCreate.js';
 import inngest from './inngest/client.js';
 import 'dotenv/config';
 
+
 const app = express();
 console.log("App_URL:", process.env.APP_URL);
 app.use(cors({
   origin: process.env.APP_URL,
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  exposedHeaders: ['Set-Cookie']
 }));
 app.use(express.json());
 app.use(cookieParser());
