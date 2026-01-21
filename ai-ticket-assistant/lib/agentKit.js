@@ -55,6 +55,17 @@ Required JSON format:
       })
     },
     {
+      name:'HuggingFace-OpenAI',
+      enabled: !!process.env.HUGGINGFACE_API_KEY,
+      model: openai({
+        model: "openai/gpt-oss-20b:groq",
+        apiKey: process.env.HUGGINGFACE_API_KEY,
+        baseUrl: "https://router.huggingface.co/v1",
+        defaultParameters: { temperature: 0.5 }
+      })
+
+    },
+    {
       name: 'Gemini',
       enabled: !!process.env.GEMINI_API_KEY,
       model: gemini({
@@ -111,7 +122,7 @@ Required JSON format:
         description: "Analyzes support tickets and suggests responses",
         system
       });
-      const maxRetries = 2;
+      const maxRetries = 1;
       const baseDelayMs = 1000;
       let response;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
