@@ -17,9 +17,9 @@ export const analyzeTicket = async (ticket) => {
     - relatedSkills: array of relevant skills
     - deadline: date in YYYY-MM-DD format (future date based on priority)
     For deadlines, use these guidelines:
-    - high priority: add 1-3 days from today (${new Date().toISOString().split('T')[0]})
-    - medium priority: add 3-7 days from today
-    - low priority: add 7-14 days from today
+    - high priority: add 1 days from today (${new Date().toISOString().split('T')[0]})
+    - medium priority: add 2-4 days from today
+    - low priority: add 5-10 days from today
     Respond ONLY with valid JSON. No explanations, no markdown, no code blocks.`;
 
   const prompt = `Analyze this support ticket and respond with ONLY a JSON object:
